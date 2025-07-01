@@ -60,6 +60,27 @@
             padding: 2px;
             box-sizing: border-box;
         }
+        #matrix-modal {
+            transition: opacity 0.3s ease-in-out;
+        }
+        .matrix-table th, .matrix-table td {
+            border: 1px solid #d1d5db;
+            padding: 0.5rem;
+            text-align: center;
+        }
+        .matrix-table input, .matrix-table select {
+            width: 100%;
+            border: 1px solid #d1d5db;
+            border-radius: 0.25rem;
+            text-align: center;
+        }
+        .matrix-table select {
+            padding: 0.25rem;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-color: transparent;
+        }
     </style>
 </head>
 <body class="bg-gray-100 text-gray-800">
@@ -95,12 +116,25 @@
             </div>
         </div>
     </div>
+    
+    <!-- C&E Matrix Modal -->
+    <div id="matrix-modal" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 hidden z-50">
+        <div id="matrix-content" class="bg-white rounded-lg shadow-xl w-full max-w-6xl h-full max-h-[90vh] flex flex-col">
+            <!-- Content will be injected here -->
+        </div>
+    </div>
+
 
     <script>
         // --- Data Structure ---
         let fishboneData = {
             problem: "",
             causes: []
+        };
+        let matrixData = {
+            cts: [],
+            inputs: [],
+            specs: { lower: '', target: '', upper: '' }
         };
 
         // --- State Management ---
@@ -247,7 +281,9 @@
                         if (subCause.subSubCauses) {
                             subCause.subSubCauses.forEach((subSubCause, k) => {
                                 const subSubCauseX = subCauseBranchStartX + 15;
-                                const subSubCauseY = subCauseBranchStartY + (isTop ? -25 * (k + 1) : 25 * (k + 1));
+                                // --- CORRECTED: Reasons now branch inwards towards the spine ---
+                                const subSubCauseY = subCauseBranchStartY + (isTop ? 25 * (k + 1) : -25 * (k + 1));
+                                // --- End of correction ---
                                 const subSubCauseGroup = svg.append("g");
                                 subSubCauseGroup.append("line").attr("x1", subSubCauseX).attr("y1", subSubCauseY).attr("x2", subSubCauseX + 35).attr("y2", subSubCauseY).attr("class", "link").attr("stroke-dasharray", "2,2").style("stroke", cause.color || '#6b7280');
                                 const subSubCauseText = subSubCauseGroup.append("text").text(subSubCause.name).attr("x", subSubCauseX + 40).attr("y", subSubCauseY + 3).attr("text-anchor", "start").attr("alignment-baseline", "middle").style("font-style", "italic").call(wrapText, 80, 2, 11, 8);
@@ -270,6 +306,7 @@
             
             const exportButtons = `
                 <div class="flex flex-col gap-2">
+                    <button onclick="launchMatrixWizard()" class="w-full bg-purple-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-purple-700 text-sm">Create C&E Matrix</button>
                     <button onclick="exportTextReport()" class="w-full bg-blue-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-800 text-sm">Export Report (for Word)</button>
                     <button onclick="exportSVG()" class="w-full bg-teal-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-teal-700 text-sm">Export SVG (for Visio)</button>
                     <button onclick="exportPNG()" class="w-full bg-sky-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-sky-700 text-sm">Export PNG</button>
@@ -277,20 +314,6 @@
                     <button onclick="exportCSV()" class="w-full bg-green-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-800 text-sm">Export CSV (for Excel)</button>
                 </div>
             `;
-
-            // --- NEW: Safeguards to prevent rendering a broken state ---
-            if (currentStep === 2 && fishboneData.causes.length === 0) {
-                currentStep = 4; // Skip to finished if no main causes exist
-            }
-            if (currentStep === 3) {
-                const cause = fishboneData.causes[causeIterator];
-                if (!cause || !cause.subCauses || cause.subCauses.length === 0) {
-                    // This cause has no sub-causes, so skip the "Reasons" step for it
-                    goNext();
-                    return; // Stop this render and let the next one take over
-                }
-            }
-            // --- End of safeguards ---
 
             switch (currentStep) {
                 case 0: // Problem
@@ -315,6 +338,7 @@
                     nav = `${backButton} ${nextButton('Analyze Sub-Causes &raquo;')}`;
                     break;
                 case 2: // Sub-Causes
+                    if (fishboneData.causes.length === 0) { goNext(); break; }
                     const cause = fishboneData.causes[causeIterator];
                     let subCausesList = (cause.subCauses || []).map((sc, i) => `<li class="flex items-center justify-between bg-gray-50 p-2 rounded-md"><span>${sc.name}</span><button onclick="deleteSubCause(${causeIterator}, ${i})" class="text-red-500 hover:text-red-700 font-bold">&times;</button></li>`).join('');
                     content = `
@@ -329,7 +353,9 @@
                     nav = `${backButton} ${nextButton('Analyze Reasons &raquo;')}`;
                     break;
                 case 3: // Sub-Sub-Causes (Reasons)
+                    if (fishboneData.causes.length === 0) { goBack(); break; }
                     const currentCause = fishboneData.causes[causeIterator];
+                    if (!currentCause.subCauses || currentCause.subCauses.length === 0) { goNext(); break; }
                     const subCause = currentCause.subCauses[subCauseIterator];
                     let reasonsList = (subCause.subSubCauses || []).map((ssc, i) => `<li class="flex items-center justify-between bg-gray-50 p-2 rounded-md"><span>${ssc.name}</span><button onclick="deleteSubSubCause(${causeIterator}, ${subCauseIterator}, ${i})" class="text-red-500 hover:text-red-700 font-bold">&times;</button></li>`).join('');
                     content = `
@@ -760,7 +786,271 @@
             });
         }
 
-        // --- Initial Load ---
+        // --- C&E Matrix Functions ---
+        function launchMatrixWizard() {
+            matrixData.cts = [{ name: fishboneData.problem, importance: 10 }];
+            matrixData.inputs = [];
+            fishboneData.causes.forEach(c => {
+                (c.subCauses || []).forEach(sc => {
+                    matrixData.inputs.push({
+                        name: sc.name,
+                        processStep: '',
+                        ratings: {}
+                    });
+                });
+            });
+            renderMatrixCtsScreen();
+            document.getElementById('matrix-modal').classList.remove('hidden');
+        }
+
+        function renderMatrixCtsScreen() {
+            const contentEl = document.getElementById('matrix-content');
+            let ctsRows = matrixData.cts.map((cts, i) => `
+                <tr class="bg-gray-50">
+                    <td class="p-2 border">${i === 0 ? 'Primary Y' : `Other ${i+1}`}</td>
+                    <td class="p-2 border"><input type="text" value="${cts.name}" class="w-full p-1" oninput="matrixData.cts[${i}].name = this.value"></td>
+                    <td class="p-2 border"><input type="number" value="${cts.importance}" class="w-full p-1" min="1" max="10" oninput="matrixData.cts[${i}].importance = this.value"></td>
+                    <td class="p-2 border">${i > 0 ? `<button class="text-red-500 font-bold" onclick="removeCts(${i})">&times;</button>` : ''}</td>
+                </tr>
+            `).join('');
+
+            contentEl.innerHTML = `
+                <div class="p-6 border-b">
+                    <h2 class="text-2xl font-bold">C&E Matrix - Step 1: Define Metrics</h2>
+                    <p class="text-gray-600 mt-1">Define the outputs (Critical to Satisfaction metrics) and their importance to the customer (1-10).</p>
+                </div>
+                <div class="p-6 overflow-y-auto flex-grow">
+                    <table class="w-full border-collapse">
+                        <thead><tr class="bg-gray-100">
+                            <th class="p-2 border">#</th><th class="p-2 border">CTS (Critical to Satisfaction)</th><th class="p-2 border">Importance Rating</th><th class="p-2 border"></th>
+                        </tr></thead>
+                        <tbody>${ctsRows}</tbody>
+                    </table>
+                    <div class="mt-4 flex gap-2">
+                        <button class="bg-blue-500 text-white px-4 py-2 rounded" onclick="addCts()">+ Add CTS</button>
+                        <input id="custom-cts-input" type="text" class="border rounded p-1 flex-grow" placeholder="Or type a custom metric and add">
+                    </div>
+                </div>
+                <div class="p-6 border-t flex justify-between">
+                    <button class="bg-gray-500 text-white px-4 py-2 rounded" onclick="closeMatrix()">Cancel</button>
+                    <button class="bg-green-600 text-white px-4 py-2 rounded" onclick="renderMatrixSpecsScreen()">Next: Define Specs &raquo;</button>
+                </div>
+            `;
+        }
+        
+        function addCts() {
+            const customInput = document.getElementById('custom-cts-input');
+            let newCtsName = customInput.value.trim();
+            if (!newCtsName) {
+                const defaultOptions = ["Cost", "Safety", "Availability", "Reliability"];
+                newCtsName = defaultOptions.find(opt => !matrixData.cts.some(cts => cts.name === opt)) || "New Metric";
+            }
+            matrixData.cts.push({ name: newCtsName, importance: 5 });
+            renderMatrixCtsScreen();
+        }
+
+        function removeCts(index) {
+            matrixData.cts.splice(index, 1);
+            renderMatrixCtsScreen();
+        }
+
+        function renderMatrixSpecsScreen() {
+            const contentEl = document.getElementById('matrix-content');
+            contentEl.innerHTML = `
+                <div class="p-6 border-b">
+                    <h2 class="text-2xl font-bold">C&E Matrix - Step 2: Define Specs</h2>
+                    <p class="text-gray-600 mt-1">Enter the specification limits for your primary problem.</p>
+                </div>
+                <div class="p-6 flex-grow space-y-4">
+                    <div>
+                        <label class="block font-medium text-gray-700">Lower Spec:</label>
+                        <input id="lower-spec" type="text" class="w-full mt-1 p-2 border rounded" value="${matrixData.specs.lower}">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-gray-700">Target:</label>
+                        <input id="target-spec" type="text" class="w-full mt-1 p-2 border rounded" value="${matrixData.specs.target}">
+                    </div>
+                    <div>
+                        <label class="block font-medium text-gray-700">Upper Spec:</label>
+                        <input id="upper-spec" type="text" class="w-full mt-1 p-2 border rounded" value="${matrixData.specs.upper}">
+                    </div>
+                </div>
+                <div class="p-6 border-t flex justify-between">
+                    <button class="bg-gray-500 text-white px-4 py-2 rounded" onclick="renderMatrixCtsScreen()">Back</button>
+                    <button class="bg-green-600 text-white px-4 py-2 rounded" onclick="saveSpecsAndProceed()">Next: Rate Causes &raquo;</button>
+                </div>
+            `;
+        }
+
+        function saveSpecsAndProceed() {
+            matrixData.specs.lower = document.getElementById('lower-spec').value;
+            matrixData.specs.target = document.getElementById('target-spec').value;
+            matrixData.specs.upper = document.getElementById('upper-spec').value;
+            renderMatrixInputsScreen();
+        }
+
+        function renderMatrixInputsScreen() {
+             const contentEl = document.getElementById('matrix-content');
+             let header = matrixData.cts.map(cts => `<th class="p-1 border transform -rotate-45 h-24 w-16">${cts.name}</th>`).join('');
+             let importanceRow = matrixData.cts.map(cts => `<td class="p-2 border font-bold">${cts.importance}</td>`).join('');
+             
+             let inputRows = matrixData.inputs.map((input, i) => {
+                let ratingCells = matrixData.cts.map((_, j) => {
+                    const ratingValue = input.ratings[j] || 0;
+                    const options = [0, 1, 3, 9];
+                    const optionsHtml = options.map(opt => `<option value="${opt}" ${ratingValue == opt ? 'selected' : ''}>${opt}</option>`).join('');
+                    return `<td class="p-1 border"><select class="w-16 bg-transparent border-none text-center" onchange="updateMatrixRating(${i}, ${j}, this.value)">${optionsHtml}</select></td>`;
+                }).join('');
+
+                let total = calculateMatrixRowTotal(i);
+                return `
+                    <tr>
+                        <td class="p-2 border">${i+1}</td>
+                        <td class="p-2 border"><input type="text" value="${input.processStep || ''}" oninput="matrixData.inputs[${i}].processStep = this.value"></td>
+                        <td class="p-2 border text-left">${input.name}</td>
+                        ${ratingCells}
+                        <td class="p-2 border font-bold" id="row-total-${i}">${total}</td>
+                    </tr>
+                `;
+             }).join('');
+
+            let totalCols = matrixData.cts.map((_, j) => `<td class="p-2 border font-bold" id="col-total-${j}"></td>`).join('');
+
+             contentEl.innerHTML = `
+                <div class="p-6 border-b">
+                    <h2 class="text-2xl font-bold">C&E Matrix - Step 3: Rate Causes</h2>
+                    <p class="text-gray-600 mt-1">For each cause, enter the Process Step and rate its impact on each CTS metric (0=None, 1=Low, 3=Medium, 9=High).</p>
+                </div>
+                <div class="p-6 overflow-auto flex-grow">
+                    <table class="w-full border-collapse matrix-table text-sm">
+                        <thead>
+                            <tr>
+                                <th class="p-1 border" rowspan="2">#</th>
+                                <th class="p-1 border" rowspan="2">Process Step</th>
+                                <th class="p-1 border" rowspan="2">Process Input / Cause</th>
+                                <th class="p-1 border" colspan="${matrixData.cts.length}">CTS (Critical to Satisfaction)</th>
+                                <th class="p-1 border" rowspan="2">Total</th>
+                            </tr>
+                            <tr>${header}</tr>
+                            <tr class="bg-gray-100"><td class="p-2 border font-bold" colspan="3">Importance Rating</td>${importanceRow}<td class="bg-gray-200"></td></tr>
+                        </thead>
+                        <tbody>${inputRows}</tbody>
+                        <tfoot>
+                            <tr class="bg-gray-100"><td class="p-2 border font-bold" colspan="3">Total</td>${totalCols}<td class="bg-gray-200"></td></tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="p-6 border-t flex justify-between">
+                    <button class="bg-gray-500 text-white px-4 py-2 rounded" onclick="renderMatrixSpecsScreen()">Back</button>
+                    <div class="flex gap-2">
+                        <button class="bg-green-600 text-white px-4 py-2 rounded" onclick="exportMatrixCSV()">Export CSV</button>
+                        <button class="bg-sky-600 text-white px-4 py-2 rounded" onclick="exportMatrixPNG()">Export PNG</button>
+                        <button class="bg-red-700 text-white px-4 py-2 rounded" onclick="exportMatrixPDF()">Export PDF</button>
+                    </div>
+                    <button class="bg-red-500 text-white px-4 py-2 rounded" onclick="closeMatrix()">Close</button>
+                </div>
+             `;
+             updateAllMatrixTotals();
+        }
+
+        function updateMatrixRating(inputIndex, ctsIndex, value) {
+            matrixData.inputs[inputIndex].ratings[ctsIndex] = parseInt(value, 10);
+            updateAllMatrixTotals();
+        }
+        
+        function calculateMatrixRowTotal(inputIndex) {
+            let total = 0;
+            const input = matrixData.inputs[inputIndex];
+            matrixData.cts.forEach((cts, j) => {
+                total += (input.ratings[j] || 0) * (cts.importance || 0);
+            });
+            return total;
+        }
+
+        function updateAllMatrixTotals() {
+            let colTotals = new Array(matrixData.cts.length).fill(0);
+            matrixData.inputs.forEach((input, i) => {
+                let rowTotal = 0;
+                matrixData.cts.forEach((cts, j) => {
+                    const rating = input.ratings[j] || 0;
+                    const importance = cts.importance || 0;
+                    const score = rating * importance;
+                    rowTotal += score;
+                    colTotals[j] += score;
+                });
+                document.getElementById(`row-total-${i}`).textContent = rowTotal;
+            });
+            colTotals.forEach((total, j) => {
+                document.getElementById(`col-total-${j}`).textContent = total;
+            });
+        }
+
+        function closeMatrix() {
+            document.getElementById('matrix-modal').classList.add('hidden');
+        }
+
+        function exportMatrixCSV() {
+            let csv = [];
+            let header1 = ['','','', ...matrixData.cts.map(c => `"${c.name}"`), 'Total'];
+            csv.push(header1.join(','));
+            let header2 = ['#','Process Step','Process Input / Cause', ...matrixData.cts.map(c => c.importance), ''];
+            csv.push(header2.join(','));
+
+            matrixData.inputs.forEach((input, i) => {
+                let row = [
+                    i + 1,
+                    `"${input.processStep || ''}"`,
+                    `"${input.name}"`,
+                    ...matrixData.cts.map((_, j) => input.ratings[j] || 0),
+                    calculateMatrixRowTotal(i)
+                ];
+                csv.push(row.join(','));
+            });
+            
+            csv.push([]);
+            csv.push([`"Lower Spec:","${matrixData.specs.lower}"`]);
+            csv.push([`"Target:","${matrixData.specs.target}"`]);
+            csv.push([`"Upper Spec:","${matrixData.specs.upper}"`]);
+
+            const csvString = csv.join('\n');
+            const blob = new Blob([csvString], {type: "text/csv;charset=utf-8,"});
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "cause-and-effect-matrix.csv";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function exportMatrixPNG() {
+            const matrixEl = document.getElementById('matrix-content');
+            html2canvas(matrixEl, { scale: 2 }).then(canvas => {
+                const link = document.createElement('a');
+                link.href = canvas.toDataURL('image/png');
+                link.download = 'cause-and-effect-matrix.png';
+                link.click();
+            });
+        }
+
+        function exportMatrixPDF() {
+            const { jsPDF } = window.jspdf;
+            const matrixEl = document.getElementById('matrix-content');
+            
+            html2canvas(matrixEl, { scale: 2 }).then(canvas => {
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF({
+                    orientation: 'landscape',
+                    unit: 'px',
+                    format: [canvas.width, canvas.height]
+                });
+                pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+                pdf.save("cause-and-effect-matrix.pdf");
+            });
+        }
+
+
+        // --- Initial Load & Other Functions ---
         window.onload = () => {
             drawAndRender();
         };
